@@ -7,26 +7,40 @@ import (
 )
 
 func main() {
-	fileName := "-"
-	if len(os.Args) > 1 {
-		fileName = os.Args[1]
-	}
-	if fileName == "-" {
-		if err := TransferBufferData(os.Stdin, os.Stdout); err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		file, err := os.Open(fileName)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err = TransferBufferData(file, os.Stdout); err != nil {
-			log.Fatal(err)
-		}
+	err := IterateAndOutput(os.Args[1:], os.Stdout)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
-func TransferBufferData(in *os.File, out io.Writer) error {
+func IterateAndOutput(fileNames []string, out io.Writer) error {
+	if len(fileNames) == 0 {
+		fileNames = []string{"-"}
+	}
+	for _, fileName := range fileNames {
+		switch fileName {
+		case "-":
+			err := OutputBufferData(os.Stdin, out)
+			if err != nil {
+				return err
+			}
+		default:
+			file, openErr := os.Open(fileName)
+			if openErr != nil {
+				return openErr
+			}
+			defer file.Close()
+
+			err := OutputBufferData(file, out)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func OutputBufferData(in *os.File, out io.Writer) error {
 	if _, err := in.WriteTo(out); err != nil {
 		return err
 	}
