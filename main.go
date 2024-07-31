@@ -1,16 +1,34 @@
 package main
 
 import (
-	"fmt"
+	"io"
 	"log"
 	"os"
 )
 
 func main() {
-	fileName := os.Args[1]
-	bytes, err := os.ReadFile(fileName)
-	if err != nil {
-		log.Fatal(err)
+	fileName := "-"
+	if len(os.Args) > 1 {
+		fileName = os.Args[1]
 	}
-	fmt.Printf("%s", bytes)
+	if fileName == "-" {
+		if err := TransferBufferData(os.Stdin, os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		file, err := os.Open(fileName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err = TransferBufferData(file, os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func TransferBufferData(in *os.File, out io.Writer) error {
+	if _, err := in.WriteTo(out); err != nil {
+		return err
+	}
+	return nil
 }
