@@ -5,7 +5,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -14,21 +16,21 @@ const (
 	DEFAULT_MODE = 0
 )
 
-type MyWriter struct {
+type myWriter struct {
 	dest     io.Writer
 	lineNum  int
 	mode     int
 	prevByte byte
 }
 
-func (out *MyWriter) Write(bytes []byte) (int, error) {
+func (out *myWriter) Write(bytes []byte) (int, error) {
 	if out.mode&COUNT_LINES == 0 {
 		return out.dest.Write(bytes)
 	}
 	for i, b := range bytes {
 		var p []byte
 		if out.prefixRequired(b) {
-			p = out.prefixGen()
+			p = []byte(fmt.Sprintf("%6v  ", out.lineNum))
 			out.lineNum++
 		}
 		p = append(p, b)
@@ -41,23 +43,10 @@ func (out *MyWriter) Write(bytes []byte) (int, error) {
 	return len(bytes), nil
 }
 
-func (out *MyWriter) prefixGen() []byte {
-	return []byte(fmt.Sprintf("%6v  ", out.lineNum))
-}
-
-func (out *MyWriter) prefixRequired(r byte) bool {
+func (out *myWriter) prefixRequired(b byte) bool {
 	return out.mode&COUNT_LINES != 0 &&
 		out.prevByte == '\n' &&
-		(out.mode&EXCLUDE_BLANKS == 0 || r != '\n')
-}
-
-func NewWriter(dest io.Writer, mode int) io.Writer {
-	return &MyWriter{
-		dest:     dest,
-		lineNum:  1,
-		mode:     mode,
-		prevByte: '\n',
-	}
+		(out.mode&EXCLUDE_BLANKS == 0 || b != '\n')
 }
 
 func main() {
@@ -83,14 +72,34 @@ func main() {
 	if len(fileNames) == 0 {
 		fileNames = []string{"-"}
 	}
-	out := NewWriter(os.Stdout, mode)
-	err := IterateAndOutput(fileNames, out)
+	out := newWriter(os.Stdout, mode)
+	newSigHandler()
+	err := iterateAndOutput(fileNames, out)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func IterateAndOutput(fileNames []string, out io.Writer) error {
+func newSigHandler() {
+	sigs := make(chan os.Signal)
+	signal.Notify(sigs, syscall.SIGPIPE)
+	go func() {
+		sig := <-sigs
+		os.Exit(0)
+		fmt.Println(sig)
+	}()
+}
+
+func newWriter(dest io.Writer, mode int) *myWriter {
+	return &myWriter{
+		dest:     dest,
+		lineNum:  1,
+		mode:     mode,
+		prevByte: '\n',
+	}
+}
+
+func iterateAndOutput(fileNames []string, out io.Writer) error {
 	for _, fileName := range fileNames {
 		switch fileName {
 		case "-":
