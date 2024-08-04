@@ -1,8 +1,8 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -15,39 +15,6 @@ const (
 	EXCLUDE_BLANKS
 	DEFAULT_MODE = 0
 )
-
-type myWriter struct {
-	dest     io.Writer
-	lineNum  int
-	mode     int
-	prevByte byte
-}
-
-func (out *myWriter) Write(bytes []byte) (int, error) {
-	if out.mode&COUNT_LINES == 0 {
-		return out.dest.Write(bytes)
-	}
-	for i, b := range bytes {
-		var p []byte
-		if out.prefixRequired(b) {
-			p = []byte(fmt.Sprintf("%6v  ", out.lineNum))
-			out.lineNum++
-		}
-		p = append(p, b)
-		_, err := out.dest.Write(p)
-		if err != nil {
-			return i, err
-		}
-		out.prevByte = b
-	}
-	return len(bytes), nil
-}
-
-func (out *myWriter) prefixRequired(b byte) bool {
-	return out.mode&COUNT_LINES != 0 &&
-		out.prevByte == '\n' &&
-		(out.mode&EXCLUDE_BLANKS == 0 || b != '\n')
-}
 
 func main() {
 	args := os.Args[1:]
@@ -72,53 +39,37 @@ func main() {
 	if len(fileNames) == 0 {
 		fileNames = []string{"-"}
 	}
-	out := newWriter(os.Stdout, mode)
-	newSigHandler()
-	err := iterateAndOutput(fileNames, out)
-	if err != nil {
-		log.Fatal(err)
-	}
+	go newSigHandler()
+	iterateAndOutput(fileNames, mode)
 }
 
 func newSigHandler() {
-	sigs := make(chan os.Signal)
-	signal.Notify(sigs, syscall.SIGPIPE)
-	go func() {
-		sig := <-sigs
-		os.Exit(0)
-		fmt.Println(sig)
-	}()
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGPIPE)
+	_ = <-c
+	os.Exit(0)
 }
 
-func newWriter(dest io.Writer, mode int) *myWriter {
-	return &myWriter{
-		dest:     dest,
-		lineNum:  1,
-		mode:     mode,
-		prevByte: '\n',
-	}
-}
-
-func iterateAndOutput(fileNames []string, out io.Writer) error {
+func iterateAndOutput(fileNames []string, mode int) {
+	lineCount := 1
 	for _, fileName := range fileNames {
-		switch fileName {
-		case "-":
-			_, err := os.Stdin.WriteTo(out)
-			if err != nil {
-				return err
-			}
-		default:
+		var s *bufio.Scanner
+		if fileName == "-" {
+			s = bufio.NewScanner(os.Stdin)
+		} else {
 			file, openErr := os.Open(fileName)
 			if openErr != nil {
-				return openErr
+				log.Fatal(openErr)
 			}
-			defer file.Close()
-
-			_, err := file.WriteTo(out)
-			if err != nil {
-				return err
+			s = bufio.NewScanner(file)
+		}
+		for s.Scan() {
+			text := s.Text()
+			if mode&COUNT_LINES != 0 && (mode&EXCLUDE_BLANKS == 0 || len(text) > 0) {
+				text = fmt.Sprintf("%6d  %s", lineCount, text)
+				lineCount++
 			}
+			fmt.Println(text)
 		}
 	}
-	return nil
 }
