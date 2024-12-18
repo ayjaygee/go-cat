@@ -44,7 +44,7 @@ func main() {
 }
 
 func newSigHandler() {
-	c := make(chan os.Signal)
+	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGPIPE)
 	_ = <-c
 	os.Exit(0)
@@ -69,7 +69,9 @@ func iterateAndOutput(fileNames []string, mode int) {
 				text = fmt.Sprintf("%6d  %s", lineCount, text)
 				lineCount++
 			}
-			fmt.Println(text)
+			text += "\n"
+			os.Stdout.Write([]byte(text))
+			//fmt.Print(text, "\n")
 		}
 	}
 }
